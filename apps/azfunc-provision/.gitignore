@@ -1,0 +1,35 @@
+# Environment variables
+.env
+local.settings.json
+
+# Build output
+dist/
+*.js
+*.js.map
+
+# Dependencies
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Azure Functions
+bin/
+obj/
+.azurefunctions/
+__blobstorage__/
+__queuestorage__/
+__azurite_db*__.json
+
+# Testing
+coverage/
+.nyc_output/
