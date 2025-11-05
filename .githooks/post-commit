@@ -1,0 +1,58 @@
+#!/bin/bash
+#
+# Post-commit hook for automated documentation
+#
+# Optionally generates:
+# - Session documentation (if enabled)
+# - Changelog updates (if enabled)
+#
+# Configuration:
+#   Create .git/hooks-config with:
+#     AUTO_SESSION_DOC=true
+#     AUTO_CHANGELOG=true
+#
+# Installation:
+#   git config core.hooksPath .githooks
+#
+# Author: Template System
+# Created: 2025-11-02
+
+# Load configuration if it exists
+CONFIG_FILE=".git/hooks-config"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+fi
+
+# Auto-generate session doc (if enabled)
+if [ "$AUTO_SESSION_DOC" = "true" ]; then
+    echo "📝 Auto-generating session documentation..."
+    if [ -f "C:/devop/.template-system/scripts/generate_session_doc.py" ]; then
+        python C:/devop/.template-system/scripts/generate_session_doc.py \
+            --project-path "$(pwd)" \
+            --since-hours 24 \
+            2>/dev/null || echo "⚠️  Session doc generation skipped (enable in hooks-config)"
+    fi
+fi
+
+# Auto-update changelog (if enabled)
+if [ "$AUTO_CHANGELOG" = "true" ]; then
+    echo "📋 Auto-updating changelog..."
+    if [ -f "C:/devop/.template-system/scripts/generate_changelog.py" ]; then
+        python C:/devop/.template-system/scripts/generate_changelog.py \
+            --project-path "$(pwd)" \
+            --unreleased \
+            2>/dev/null || echo "⚠️  Changelog generation skipped (enable in hooks-config)"
+    fi
+fi
+
+# Auto-sync progress to dashboard (if enabled)
+if [ "$AUTO_PROGRESS_SYNC" = "true" ]; then
+    echo "📊 Auto-syncing progress to dashboard..."
+    if [ -f "C:/devop/.template-system/scripts/sync_project_progress.py" ]; then
+        python C:/devop/.template-system/scripts/sync_project_progress.py \
+            --project-path "$(pwd)" \
+            2>/dev/null || echo "⚠️  Progress sync skipped (enable in hooks-config)"
+    fi
+fi
+
+exit 0

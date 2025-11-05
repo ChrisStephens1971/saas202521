@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "projectName": {
+      "value": "saas202521"
+    },
+    "environment": {
+      "value": "production"
+    },
+    "dbAdminUsername": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/{subscription-id}/resourceGroups/saas202521-rg/providers/Microsoft.KeyVault/vaults/saas202521-kv"
+        },
+        "secretName": "db-admin-username"
+      }
+    },
+    "dbAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/{subscription-id}/resourceGroups/saas202521-rg/providers/Microsoft.KeyVault/vaults/saas202521-kv"
+        },
+        "secretName": "db-admin-password"
+      }
+    }
+  }
+}

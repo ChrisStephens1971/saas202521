@@ -1,0 +1,75 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "<your-github-token>"
+      }
+    },
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": {
+        "POSTGRES_CONNECTION_STRING": "postgresql://user:password@localhost:5432/dbname"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\devop\\saas202521"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    }
+  },
+  "_instructions": {
+    "setup": [
+      "1. Copy this file's content to your Claude Desktop config:",
+      "   Windows: %APPDATA%\\Claude\\claude_desktop_config.json",
+      "   Mac: ~/Library/Application Support/Claude/claude_desktop_config.json",
+      "",
+      "2. Replace placeholders:",
+      "   - <your-github-token>: Create at https://github.com/settings/tokens",
+      "   - POSTGRES_CONNECTION_STRING: Your database connection string",
+      "   - saas202521: Replace with your actual project name",
+      "",
+      "3. Restart Claude Desktop app",
+      "",
+      "4. Test by asking Claude: 'List my GitHub repositories'"
+    ],
+    "optional_mcps": {
+      "stripe": {
+        "description": "Payment processing integration",
+        "command": "npx",
+        "args": ["-y", "@stripe/mcp-server"],
+        "env": {
+          "STRIPE_API_KEY": "<your-stripe-secret-key>"
+        }
+      },
+      "notion": {
+        "description": "Documentation and notes access",
+        "command": "npx",
+        "args": ["-y", "@notionhq/mcp-server"],
+        "env": {
+          "NOTION_API_KEY": "<your-notion-integration-token>"
+        }
+      }
+    },
+    "recommended_for_saas": [
+      "github - Repository and code management",
+      "postgres - Database queries and schema management",
+      "filesystem - Local file access (already configured for this project)",
+      "memory - Persistent memory across sessions",
+      "stripe - Payment processing (if accepting payments)",
+      "notion - Documentation access (if using Notion)"
+    ],
+    "security_notes": [
+      "⚠️ NEVER commit claude_desktop_config.json to git",
+      "⚠️ API keys and tokens are sensitive - keep them secret",
+      "⚠️ Use environment-specific tokens (dev vs production)",
+      "⚠️ Rotate tokens periodically",
+      "⚠️ Grant minimum required permissions"
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Read(//c/kb/**)",
+      "Bash(echo:*)",
+      "Read(//c/Users/Chris Stephens/**)",
+      "WebSearch",
+      "Bash(powershell -File:*)",
+      "Bash(powershell -Command \"& {.\\Check-DomainAvailability.ps1 -Domains @(''nailroute.com'',''glamroute.com'',''polishpath.com'',''naildash.com'',''nailflow.com'',''nailsync.com'',''booknails.com'',''manicurego.com'',''polishpro.com'',''techroute.com'',''glossygo.com'',''bufferbook.com'')}\")",
+      "Bash(powershell -Command \"& {$config = Get-Content ''C:\\devop\\.config\\godaddy-api.json'' | ConvertFrom-Json; Write-Host ''API Key:'' $config.apiKey; Write-Host ''Base URL:'' $config.baseUrl}\")",
+      "WebFetch(domain:whoapi.com)",
+      "WebFetch(domain:who.is)",
+      "Bash(find:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

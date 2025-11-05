@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+#
+# Claude Code Pre-Execution Hook
+# Prevents dangerous process management commands from being executed
+#
+# This hook runs BEFORE Claude executes any Bash command
+# If it detects a dangerous pattern, it blocks execution and warns the user
+#
+
+# Get the command that Claude is about to execute
+command="$1"
+
+# Dangerous patterns that kill ALL processes (case-insensitive)
+declare -a dangerous_patterns=(
+    "taskkill /F /IM"
+    "taskkill /IM.*\\.exe"
+    "Get-Process.*Stop-Process"
+    "killall [a-zA-Z]"
+    "pkill [a-zA-Z]"
+    "docker stop \$(docker ps"
+    "systemctl stop \*"
+)
+
+# Safe patterns that are allowed
+declare -a safe_patterns=(
+    "taskkill /F /PID"
+    "kill -9 [0-9]"
+    "lsof -ti:"
+    "netstat.*findstr :"
+    "docker stop [a-zA-Z0-9_-]"
+    "docker-compose down"
+)
+
+# Function to check if command matches safe pattern
+is_safe_command() {
+    local cmd="$1"
+    for pattern in "${safe_patterns[@]}"; do
+        if echo "$cmd" | grep -qiE "$pattern"; then
+            return 0  # Safe
+        fi
+    done
+    return 1  # Not explicitly safe
+}
+
+# Function to check if command matches dangerous pattern
+is_dangerous_command() {
+    local cmd="$1"
+    for pattern in "${dangerous_patterns[@]}"; do
+        if echo "$cmd" | grep -qiE "$pattern"; then
+            return 0  # Dangerous
+        fi
+    done
+    return 1  # Not dangerous
+}
+
+# Check the command
+if is_dangerous_command "$command" && ! is_safe_command "$command"; then
+    echo ""
+    echo "================================================================"
+    echo "  [BLOCKED] DANGEROUS PROCESS COMMAND DETECTED!"
+    echo "================================================================"
+    echo ""
+    echo "Command: $command"
+    echo ""
+    echo "This command would kill ALL processes of that type, including:"
+    echo "  - Other project dev servers"
+    echo "  - Background processes"
+    echo "  - Unrelated Node.js/Python/etc processes"
+    echo ""
+    echo "SAFE ALTERNATIVES:"
+    echo ""
+    echo "  Windows:"
+    echo "    # Find process by port"
+    echo "    netstat -ano | findstr :YOUR_PORT"
+    echo "    # Kill specific PID"
+    echo "    taskkill /F /PID <PID>"
+    echo ""
+    echo "  Mac/Linux:"
+    echo "    # Kill by port"
+    echo "    kill \$(lsof -ti:YOUR_PORT)"
+    echo ""
+    echo "See: .config/SAFE-PROCESS-MANAGEMENT.md"
+    echo "================================================================"
+    echo ""
+    exit 1  # Block execution
+fi
+
+# Allow command to proceed
+exit 0

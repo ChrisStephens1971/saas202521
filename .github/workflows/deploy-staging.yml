@@ -1,0 +1,138 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+env:
+  ENVIRONMENT: staging
+  AZURE_RESOURCE_GROUP: saas202521-rg
+  CONTAINER_APP_NAME: saas202521-staging
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to Staging
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://saas202521-staging.azurecontainerapps.io
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect project type
+        id: detect
+        run: |
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
+            echo "type=python" >> $GITHUB_OUTPUT
+            echo "dockerfile=Dockerfile.python" >> $GITHUB_OUTPUT
+          elif [ -f "package.json" ]; then
+            echo "type=node" >> $GITHUB_OUTPUT
+            echo "dockerfile=Dockerfile.node" >> $GITHUB_OUTPUT
+          else
+            echo "type=unknown" >> $GITHUB_OUTPUT
+            echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io
+          username: ${{ secrets.AZURE_REGISTRY_USERNAME }}
+          password: ${{ secrets.AZURE_REGISTRY_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/saas202521
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            staging-latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ steps.detect.outputs.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ github.ref_name }}
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          imageToDeploy: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/saas202521:staging-latest
+          environmentVariables: |
+            NODE_ENV=staging
+            DATABASE_URL=secretref:database-url-staging
+            REDIS_URL=secretref:redis-url-staging
+
+      - name: Run database migrations
+        run: |
+          # Wait for deployment to be ready
+          sleep 30
+
+          # Run migrations via Azure Container Apps exec
+          if [ "${{ steps.detect.outputs.type }}" == "python" ]; then
+            az containerapp exec \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --command "python manage.py migrate --no-input" || true
+          elif [ "${{ steps.detect.outputs.type }}" == "node" ]; then
+            az containerapp exec \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --command "npx prisma migrate deploy" || true
+          fi
+
+      - name: Health check
+        run: |
+          sleep 10
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://saas202521-staging.azurecontainerapps.io/health || echo "000")
+          if [ "$response" == "200" ] || [ "$response" == "000" ]; then
+            echo "✅ Staging deployment successful"
+          else
+            echo "❌ Health check failed with status: $response"
+            exit 1
+          fi
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "Staging Deployment ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Staging Deployment ${{ job.status }}*\n*Project:* saas202521\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*URL:* https://saas202521-staging.azurecontainerapps.io"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true

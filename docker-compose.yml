@@ -1,0 +1,95 @@
+version: '3.8'
+
+# saas202521 - Development Services
+# Auto-configured with unique ports to avoid conflicts
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: saas202521-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: saas202521
+    ports:
+      - "5421:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: saas202521-redis
+    restart: unless-stopped
+    ports:
+      - "6421:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB (Optional - uncomment if needed)
+  # mongodb:
+  #   image: mongo:7
+  #   container_name: saas202521-mongodb
+  #   restart: unless-stopped
+  #   environment:
+  #     MONGO_INITDB_DATABASE: saas202521
+  #   ports:
+  #     - "27021:27017"
+  #   volumes:
+  #     - mongodb_data:/data/db
+  #   healthcheck:
+  #     test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # MailHog (Email Testing - Optional)
+  # Uncomment to catch outgoing emails in development
+  # mailhog:
+  #   image: mailhog/mailhog:latest
+  #   container_name: saas202521-mailhog
+  #   restart: unless-stopped
+  #   ports:
+  #     - "1025:1025"  # SMTP
+  #     - "8025:8025"  # Web UI
+  #   logging:
+  #     driver: none  # Disable logs
+
+  # Adminer (Database Management UI - Optional)
+  # Access at http://localhost:8080
+  # adminer:
+  #   image: adminer:latest
+  #   container_name: saas202521-adminer
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     ADMINER_DEFAULT_SERVER: postgres
+  #   depends_on:
+  #     - postgres
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  # mongodb_data:
+  #   driver: local
+
+networks:
+  default:
+    name: saas202521-network

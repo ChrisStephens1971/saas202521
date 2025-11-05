@@ -1,0 +1,104 @@
+# Multi-stage Dockerfile for Node.js (Express/Next.js) applications
+# Optimized for Azure Container Apps
+
+# Stage 1: Dependencies
+FROM node:20-alpine AS deps
+
+# Build arguments
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION
+ARG ENVIRONMENT=production
+
+# Labels
+LABEL maintainer="{{PROJECT_NAME}}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+LABEL org.opencontainers.image.version="${VERSION}"
+
+# Install system dependencies for node-gyp
+RUN apk add --no-cache libc6-compat python3 make g++
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY yarn.lock* ./
+COPY pnpm-lock.yaml* ./
+
+# Install dependencies based on lock file
+RUN if [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
+    elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm install --frozen-lockfile; \
+    else npm ci; fi
+
+# Stage 2: Builder
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy application code
+COPY . .
+
+# Set environment for build
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Build application
+# For Next.js
+RUN if [ -f "next.config.js" ] || [ -f "next.config.mjs" ]; then npm run build; fi
+
+# For other Node.js apps (Express, etc.)
+RUN if [ -f "tsconfig.json" ]; then npm run build; fi
+
+# Stage 3: Runtime
+FROM node:20-alpine AS runner
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 appuser
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+
+# Copy necessary files from builder
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+
+# For Next.js: Copy built application
+COPY --from=builder --chown=appuser:nodejs /app/.next ./.next
+COPY --from=builder --chown=appuser:nodejs /app/public ./public
+
+# For other Node.js apps: Copy dist/build folder
+COPY --from=builder --chown=appuser:nodejs /app/dist ./dist
+
+# Copy other necessary files
+COPY --chown=appuser:nodejs . .
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+# For Next.js
+CMD ["sh", "-c", "if [ -d '.next' ]; then npm start; else npm run start:prod; fi"]
+
+# For Express/other Node.js apps, the above will run npm start or start:prod
+# Which should be defined in your package.json as:
+# "start:prod": "node dist/main.js" or similar

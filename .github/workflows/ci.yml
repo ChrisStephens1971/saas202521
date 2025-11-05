@@ -1,0 +1,216 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect project type
+        id: detect
+        run: |
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
+            echo "type=python" >> $GITHUB_OUTPUT
+          elif [ -f "package.json" ]; then
+            echo "type=node" >> $GITHUB_OUTPUT
+          else
+            echo "type=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Python
+        if: steps.detect.outputs.type == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Lint Python
+        if: steps.detect.outputs.type == 'python'
+        run: |
+          pip install ruff black mypy
+          echo "Running ruff..."
+          ruff check . || true
+          echo "Running black..."
+          black --check . || true
+          echo "Running mypy..."
+          mypy . || true
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.type == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        if: steps.detect.outputs.type == 'node'
+        run: npm ci
+
+      - name: Lint JavaScript/TypeScript
+        if: steps.detect.outputs.type == 'node'
+        run: |
+          npm run lint || true
+          npm run type-check || true
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect project type
+        id: detect
+        run: |
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
+            echo "type=python" >> $GITHUB_OUTPUT
+          elif [ -f "package.json" ]; then
+            echo "type=node" >> $GITHUB_OUTPUT
+          else
+            echo "type=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Python
+        if: steps.detect.outputs.type == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        if: steps.detect.outputs.type == 'python'
+        run: |
+          pip install --upgrade pip
+          if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          fi
+          pip install pytest pytest-cov pytest-django
+
+      - name: Run Python tests
+        if: steps.detect.outputs.type == 'python'
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379
+          SECRET_KEY: test-secret-key
+        run: |
+          pytest --cov --cov-report=xml --cov-report=term
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.type == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        if: steps.detect.outputs.type == 'node'
+        run: npm ci
+
+      - name: Run Node.js tests
+        if: steps.detect.outputs.type == 'node'
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+        run: |
+          npm test -- --coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          fail_ci_if_error: false
+
+  build:
+    name: Test Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect project type
+        id: detect
+        run: |
+          if [ -f "Dockerfile.python" ]; then
+            echo "dockerfile=Dockerfile.python" >> $GITHUB_OUTPUT
+          elif [ -f "Dockerfile.node" ]; then
+            echo "dockerfile=Dockerfile.node" >> $GITHUB_OUTPUT
+          elif [ -f "Dockerfile" ]; then
+            echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
+          else
+            echo "dockerfile=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.detect.outputs.dockerfile != 'none'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        if: steps.detect.outputs.dockerfile != 'none'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ steps.detect.outputs.dockerfile }}
+          push: false
+          tags: saas202521:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'

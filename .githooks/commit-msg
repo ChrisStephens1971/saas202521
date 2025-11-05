@@ -1,0 +1,53 @@
+#!/bin/bash
+#
+# Commit-msg hook for conventional commits validation
+#
+# Validates commit message format: <type>(<scope>): <description>
+#
+# Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore
+#
+# Examples:
+#   feat(auth): add OAuth login
+#   fix(api): resolve timeout error
+#   docs: update README
+#
+# Installation:
+#   git config core.hooksPath .githooks
+#
+# Author: Template System
+# Created: 2025-11-02
+
+set -e
+
+COMMIT_MSG_FILE=$1
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Skip validation for merge commits
+if echo "$COMMIT_MSG" | grep -qE "^Merge"; then
+    exit 0
+fi
+
+# Conventional commit pattern
+PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore)(\([a-z0-9-]+\))?: .{1,}"
+
+if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
+    echo "❌ ERROR: Invalid commit message format"
+    echo ""
+    echo "Commit message must follow conventional commits format:"
+    echo "  <type>(<scope>): <description>"
+    echo ""
+    echo "Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore"
+    echo ""
+    echo "Examples:"
+    echo "  feat(auth): add OAuth login"
+    echo "  fix(api): resolve timeout error"
+    echo "  docs: update README"
+    echo ""
+    echo "Your commit message:"
+    echo "  $COMMIT_MSG"
+    echo ""
+    exit 1
+fi
+
+echo "✅ Commit message validation passed"
+exit 0

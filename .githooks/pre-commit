@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# Pre-commit hook for documentation validation
+#
+# Validates:
+# - No unreplaced placeholders ({{...}})
+# - Conventional commit message format (enforced at commit-msg hook)
+# - Markdown syntax (if markdownlint available)
+# - No secrets in .env.local files
+#
+# Installation:
+#   git config core.hooksPath .githooks
+#
+# Author: Template System
+# Created: 2025-11-02
+
+set -e
+
+echo "🔍 Running pre-commit validation..."
+
+# Check for unreplaced placeholders (exclude .githooks/ directory)
+echo "  Checking for unreplaced placeholders..."
+STAGED_FILES=$(git diff --cached --name-only | grep -v "^\.githooks/" || true)
+if [ -n "$STAGED_FILES" ]; then
+    if echo "$STAGED_FILES" | xargs grep -l "{{" 2>/dev/null; then
+        echo "❌ ERROR: Found unreplaced placeholders in staged files:"
+        echo "$STAGED_FILES" | xargs grep -n "{{"
+        echo ""
+        echo "Please replace all placeholder values before committing."
+        exit 1
+    fi
+fi
+
+# Check for secrets in .env.local
+if git diff --cached --name-only | grep -q "\.env\.local"; then
+    echo "❌ ERROR: Attempting to commit .env.local file"
+    echo ""
+    echo ".env.local should never be committed (contains secrets)."
+    echo "This file is in .gitignore. Please unstage it:"
+    echo "  git reset HEAD .env.local"
+    exit 1
+fi
+
+# Check markdown syntax (if markdownlint is available)
+if command -v markdownlint &> /dev/null; then
+    echo "  Checking markdown syntax..."
+    MD_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "\.md$" || true)
+    if [ -n "$MD_FILES" ]; then
+        if ! echo "$MD_FILES" | xargs markdownlint --config .markdownlint.json 2>/dev/null; then
+            echo "⚠️  WARNING: Markdown linting issues found (not blocking commit)"
+        fi
+    fi
+fi
+
+echo "✅ Pre-commit validation passed"
+exit 0

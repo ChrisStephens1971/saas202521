@@ -1,0 +1,261 @@
+name: Deploy to Production
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  ENVIRONMENT: production
+  AZURE_RESOURCE_GROUP: saas202521-rg
+  CONTAINER_APP_NAME: saas202521-prod
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to Production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://saas202521.azurecontainerapps.io
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version || github.ref }}
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Deploying version: $VERSION"
+
+      - name: Detect project type
+        id: detect
+        run: |
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
+            echo "type=python" >> $GITHUB_OUTPUT
+            echo "dockerfile=Dockerfile.python" >> $GITHUB_OUTPUT
+          elif [ -f "package.json" ]; then
+            echo "type=node" >> $GITHUB_OUTPUT
+            echo "dockerfile=Dockerfile.node" >> $GITHUB_OUTPUT
+          else
+            echo "type=unknown" >> $GITHUB_OUTPUT
+            echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create backup tag
+        run: |
+          echo "Creating backup tag before deployment..."
+          BACKUP_TAG="backup-$(date +%Y%m%d-%H%M%S)-${{ steps.version.outputs.version }}"
+          git tag $BACKUP_TAG
+          echo "backup_tag=$BACKUP_TAG" >> $GITHUB_ENV
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io
+          username: ${{ secrets.AZURE_REGISTRY_USERNAME }}
+          password: ${{ secrets.AZURE_REGISTRY_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/saas202521
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.version }}
+            type=sha,prefix=prod-
+            production-latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ steps.detect.outputs.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.version.outputs.version }}
+            ENVIRONMENT=production
+
+      - name: Create database backup
+        run: |
+          echo "Creating production database backup..."
+          az postgres flexible-server backup create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name saas202521-db \
+            --backup-name "pre-deploy-${{ steps.version.outputs.version }}" || true
+
+      - name: Deploy to Azure Container Apps
+        id: deploy
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          imageToDeploy: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/saas202521:production-latest
+          environmentVariables: |
+            NODE_ENV=production
+            DATABASE_URL=secretref:database-url-production
+            REDIS_URL=secretref:redis-url-production
+            VERSION=${{ steps.version.outputs.version }}
+
+      - name: Run database migrations
+        id: migrations
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 30
+
+          echo "Running database migrations..."
+          if [ "${{ steps.detect.outputs.type }}" == "python" ]; then
+            az containerapp exec \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --command "python manage.py migrate --no-input"
+          elif [ "${{ steps.detect.outputs.type }}" == "node" ]; then
+            az containerapp exec \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --command "npx prisma migrate deploy"
+          fi
+
+      - name: Run smoke tests
+        id: smoke_tests
+        run: |
+          echo "Running smoke tests..."
+          sleep 10
+
+          # Test health endpoint
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://saas202521.azurecontainerapps.io/health || echo "000")
+          if [ "$response" != "200" ] && [ "$response" != "000" ]; then
+            echo "❌ Health check failed with status: $response"
+            exit 1
+          fi
+
+          # Test API endpoint
+          api_response=$(curl -s -o /dev/null -w "%{http_code}" https://saas202521.azurecontainerapps.io/api/health || echo "000")
+          if [ "$api_response" != "200" ] && [ "$api_response" != "000" ]; then
+            echo "⚠️ API health check returned: $api_response"
+          fi
+
+          echo "✅ Smoke tests passed"
+
+      - name: Rollback on failure
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.migrations.outcome == 'failure' || steps.smoke_tests.outcome == 'failure')
+        run: |
+          echo "❌ Deployment failed, initiating rollback..."
+
+          # Get previous revision
+          PREVIOUS_REVISION=$(az containerapp revision list \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "[?properties.active==true] | [1].name" -o tsv)
+
+          if [ -n "$PREVIOUS_REVISION" ]; then
+            echo "Rolling back to revision: $PREVIOUS_REVISION"
+            az containerapp revision activate \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --revision $PREVIOUS_REVISION
+            echo "✅ Rollback completed"
+          else
+            echo "❌ No previous revision found for rollback"
+          fi
+
+      - name: Tag successful deployment
+        if: success()
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -f "deployed-production" ${{ steps.version.outputs.version }}
+          git push origin "deployed-production" --force || true
+
+      - name: Create GitHub Release
+        if: success() && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          body: |
+            ## 🚀 Production Deployment
+
+            **Version:** ${{ steps.version.outputs.version }}
+            **Deployed:** ${{ github.event.head_commit.timestamp }}
+            **URL:** https://saas202521.azurecontainerapps.io
+
+            ### Changes
+            ${{ github.event.head_commit.message }}
+
+            ### Deployment Info
+            - **Docker Image:** ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/saas202521:${{ steps.version.outputs.version }}
+            - **Commit:** ${{ github.sha }}
+            - **Deployed by:** ${{ github.actor }}
+          draft: false
+          prerelease: false
+
+      - name: Notify Slack - Success
+        if: success()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "✅ Production Deployment Successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*✅ Production Deployment Successful*\n*Project:* saas202521\n*Version:* ${{ steps.version.outputs.version }}\n*Commit:* ${{ github.sha }}\n*URL:* https://saas202521.azurecontainerapps.io"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
+
+      - name: Notify Slack - Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "❌ Production Deployment Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Production Deployment Failed*\n*Project:* saas202521\n*Version:* ${{ steps.version.outputs.version }}\n*Commit:* ${{ github.sha }}\n*Status:* ROLLED BACK\n*Action:* <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true

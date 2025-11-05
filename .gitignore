@@ -1,0 +1,200 @@
+# =============================================================================
+# Project - Git Ignore Configuration
+# =============================================================================
+# This file controls what gets committed vs ignored.
+# See DEVELOPMENT-GUIDE.md for generated files policy.
+
+# =============================================================================
+# GENERATED FILES - POLICY
+# =============================================================================
+# ✅ DO COMMIT:
+#    - fundraising/*.docx (pitch decks, investor docs)
+#    - docs/*.md (documentation)
+#    - package-lock.json / yarn.lock (dependency locks)
+#    - .vscode/settings.json (shared editor settings)
+#
+# ❌ DO NOT COMMIT:
+#    - .env.local (secrets)
+#    - node_modules/ (dependencies)
+#    - dist/, build/ (build artifacts)
+#    - *.log (log files)
+#
+# Example: node scripts/create-pitch-deck.js → fundraising/02-PITCH-DECK.docx
+#          ✅ Commit this .docx file (investor-facing document)
+
+# =============================================================================
+# OPERATING SYSTEM FILES
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# =============================================================================
+# EDITOR AND IDE
+# =============================================================================
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# VSCode - Keep shared settings, ignore personal workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.vscode/launch.json
+.vscode/tasks.json
+
+# =============================================================================
+# PERSONAL NOTES
+# =============================================================================
+# Keep planning docs (product/, sprints/, etc.)
+# Ignore personal scratch files
+scratch/
+personal-notes/
+.notes/
+TODO-personal.md
+
+# =============================================================================
+# TEMPORARY FILES
+# =============================================================================
+*.tmp
+*.temp
+*.log
+*.bak
+*.backup
+
+# =============================================================================
+# NODE.JS / JAVASCRIPT
+# =============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.nuxt/
+.cache/
+.parcel-cache/
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+# Dependency locks - COMMIT THESE (see policy above)
+# package-lock.json  # ✅ Keep committed
+# yarn.lock          # ✅ Keep committed
+
+# =============================================================================
+# PYTHON
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# =============================================================================
+# SECRETS AND ENVIRONMENT
+# =============================================================================
+# ⚠️ NEVER COMMIT THESE - CONTAIN SECRETS
+
+.env
+.env.local
+.env.*.local
+.env.production.local
+secrets/
+*.key
+*.pem
+credentials.json
+service-account*.json
+
+# Keep example files
+!.env.example
+
+# =============================================================================
+# DOCKER
+# =============================================================================
+# Ignore Docker volumes and local data
+.docker/
+docker-compose.override.yml
+
+# Keep main docker files
+# docker-compose.yml  # ✅ Keep committed
+# Dockerfile          # ✅ Keep committed
+
+# =============================================================================
+# DATABASES
+# =============================================================================
+# Local database files (use Docker instead)
+*.sqlite
+*.sqlite3
+*.db
+
+# Database dumps (too large, use backups instead)
+*.sql.gz
+*.dump
+
+# =============================================================================
+# GENERATED DOCUMENTATION
+# =============================================================================
+# ✅ COMMIT .docx files in fundraising/ (investor docs)
+# ❌ IGNORE .pdf exports (can be regenerated)
+
+# Keep investor documents
+!fundraising/*.docx
+!fundraising/*.pptx
+
+# Ignore PDF exports (regenerate from source)
+*.pdf
+
+# API documentation auto-generated
+docs/api-generated/
+
+# =============================================================================
+# BUILD ARTIFACTS
+# =============================================================================
+dist/
+build/
+*.tsbuildinfo
+*.map
+
+# =============================================================================
+# ARCHIVES
+# =============================================================================
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# =============================================================================
+# PROJECT SPECIFIC
+# =============================================================================
+# Add project-specific ignores below

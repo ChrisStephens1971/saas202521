@@ -1,0 +1,62 @@
+{
+  "folders": [
+    {
+      "name": "{{PROJECT_NAME}} - Root",
+      "path": "."
+    },
+    {
+      "name": "📦 Product",
+      "path": "./product"
+    },
+    {
+      "name": "🏃 Sprints",
+      "path": "./sprints"
+    },
+    {
+      "name": "⚙️ Technical",
+      "path": "./technical"
+    },
+    {
+      "name": "📊 Business",
+      "path": "./business"
+    },
+    {
+      "name": "🤝 Meetings",
+      "path": "./meetings"
+    },
+    {
+      "name": "🔄 Workflows",
+      "path": "./workflows"
+    },
+    {
+      "name": "🧠 Knowledge Base",
+      "path": "C:\\kb"
+    }
+  ],
+  "settings": {
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+    "markdown.preview.breaks": true,
+    "markdown.preview.fontSize": 14,
+    "editor.wordWrap": "on",
+    "editor.fontSize": 13,
+    "editor.lineHeight": 1.6,
+    "files.exclude": {
+      "**/.git": false,
+      "**/.DS_Store": true,
+      "**/node_modules": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.git": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "yzhang.markdown-all-in-one",
+      "davidanson.vscode-markdownlint",
+      "bierner.markdown-mermaid",
+      "streetsidesoftware.code-spell-checker"
+    ]
+  }
+}
