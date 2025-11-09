@@ -1,0 +1,240 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "functionAppUrl": {
+      "defaultValue": "https://your-function-app.azurewebsites.net",
+      "type": "String"
+    }
+  },
+  "triggers": {
+    "When_a_new_item_is_created": {
+      "type": "ApiConnection",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+          }
+        },
+        "method": "get",
+        "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://YOURSITE.sharepoint.com/sites/HR'))}/tables/@{encodeURIComponent(encodeURIComponent('New-Hire Requests'))}/onnewitems"
+      },
+      "recurrence": {
+        "frequency": "Minute",
+        "interval": 1
+      },
+      "splitOn": "@triggerBody()?['value']"
+    }
+  },
+  "actions": {
+    "Initialize_Correlation_ID": {
+      "type": "InitializeVariable",
+      "inputs": {
+        "variables": [
+          {
+            "name": "correlationId",
+            "type": "string",
+            "value": "@{guid()}"
+          }
+        ]
+      },
+      "runAfter": {}
+    },
+    "Compose_Provision_Payload": {
+      "type": "Compose",
+      "inputs": {
+        "firstName": "@triggerBody()?['FirstName']",
+        "lastName": "@triggerBody()?['LastName']",
+        "jobTitle": "@triggerBody()?['Role']",
+        "department": "@triggerBody()?['Department']",
+        "manager": "@triggerBody()?['ManagerUPN']",
+        "startDate": "@triggerBody()?['StartDate']",
+        "personalEmail": "@triggerBody()?['PersonalEmail']"
+      },
+      "runAfter": {
+        "Initialize_Correlation_ID": [
+          "Succeeded"
+        ]
+      }
+    },
+    "HTTP_Call_Provision_Function": {
+      "type": "Http",
+      "inputs": {
+        "method": "POST",
+        "uri": "@{parameters('functionAppUrl')}/api/provision",
+        "headers": {
+          "Content-Type": "application/json",
+          "x-functions-key": "@parameters('functionAppKey')"
+        },
+        "body": "@outputs('Compose_Provision_Payload')"
+      },
+      "runAfter": {
+        "Compose_Provision_Payload": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Parse_Provision_Response": {
+      "type": "ParseJson",
+      "inputs": {
+        "content": "@body('HTTP_Call_Provision_Function')",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "upn": {
+              "type": "string"
+            },
+            "correlationId": {
+              "type": "string"
+            },
+            "userId": {
+              "type": "string"
+            },
+            "groups": {
+              "type": "array"
+            },
+            "licenseAssigned": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "runAfter": {
+        "HTTP_Call_Provision_Function": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Post_Welcome_Message_to_Teams": {
+      "type": "ApiConnection",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['teams']['connectionId']"
+          }
+        },
+        "method": "post",
+        "path": "/v3/beta/teams/@{encodeURIComponent('TEAM_ID')}/channels/@{encodeURIComponent('CHANNEL_ID')}/messages",
+        "body": {
+          "body": {
+            "content": "<p>Welcome @{body('Parse_Provision_Response')?['upn']}! 🎉</p><p>Your account has been created and you're all set for your first day on @{triggerBody()?['StartDate']}.</p><p><strong>Next Steps:</strong></p><ul><li>Check your email for login instructions</li><li>Complete IT setup checklist</li><li>Review HR onboarding materials</li></ul>"
+          }
+        }
+      },
+      "runAfter": {
+        "Parse_Provision_Response": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Create_Run_Log_Item": {
+      "type": "ApiConnection",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+          }
+        },
+        "method": "post",
+        "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://YOURSITE.sharepoint.com/sites/HR'))}/tables/@{encodeURIComponent(encodeURIComponent('Onboarding Runs'))}/items",
+        "body": {
+          "CorrelationId": "@variables('correlationId')",
+          "UserPrincipalName": "@body('Parse_Provision_Response')?['upn']",
+          "FirstName": "@triggerBody()?['FirstName']",
+          "LastName": "@triggerBody()?['LastName']",
+          "Department": "@triggerBody()?['Department']",
+          "Status": "Success",
+          "CompletedAt": "@utcNow()",
+          "DurationSeconds": "@div(sub(ticks(utcNow()), ticks(triggerBody()?['Created'])), 10000000)"
+        }
+      },
+      "runAfter": {
+        "Post_Welcome_Message_to_Teams": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Send_Success_Email": {
+      "type": "ApiConnection",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['office365']['connectionId']"
+          }
+        },
+        "method": "post",
+        "path": "/v2/Mail",
+        "body": {
+          "To": "@triggerBody()?['ManagerUPN']",
+          "Subject": "New hire onboarding complete: @{triggerBody()?['FirstName']} @{triggerBody()?['LastName']}",
+          "Body": "<p>The onboarding automation has successfully provisioned @{body('Parse_Provision_Response')?['upn']}.</p><p><strong>Details:</strong></p><ul><li>UPN: @{body('Parse_Provision_Response')?['upn']}</li><li>User ID: @{body('Parse_Provision_Response')?['userId']}</li><li>Correlation ID: @{variables('correlationId')}</li></ul><p>The new hire can log in and access their onboarding Teams workspace.</p>"
+        }
+      },
+      "runAfter": {
+        "Create_Run_Log_Item": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Handle_Provision_Failure": {
+      "type": "Scope",
+      "actions": {
+        "Create_Error_Log_Item": {
+          "type": "ApiConnection",
+          "inputs": {
+            "host": {
+              "connection": {
+                "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+              }
+            },
+            "method": "post",
+            "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://YOURSITE.sharepoint.com/sites/HR'))}/tables/@{encodeURIComponent(encodeURIComponent('Onboarding Runs'))}/items",
+            "body": {
+              "CorrelationId": "@variables('correlationId')",
+              "UserPrincipalName": "N/A",
+              "FirstName": "@triggerBody()?['FirstName']",
+              "LastName": "@triggerBody()?['LastName']",
+              "Department": "@triggerBody()?['Department']",
+              "Status": "Failed",
+              "ErrorMessage": "@body('HTTP_Call_Provision_Function')?['error']",
+              "CompletedAt": "@utcNow()"
+            }
+          }
+        },
+        "Send_Failure_Email": {
+          "type": "ApiConnection",
+          "inputs": {
+            "host": {
+              "connection": {
+                "name": "@parameters('$connections')['office365']['connectionId']"
+              }
+            },
+            "method": "post",
+            "path": "/v2/Mail",
+            "body": {
+              "To": "it-support@example.com",
+              "Subject": "URGENT: New hire provisioning failed - @{triggerBody()?['FirstName']} @{triggerBody()?['LastName']}",
+              "Body": "<p style='color:red'><strong>Provisioning failed for new hire.</strong></p><p><strong>Details:</strong></p><ul><li>Name: @{triggerBody()?['FirstName']} @{triggerBody()?['LastName']}</li><li>Department: @{triggerBody()?['Department']}</li><li>Start Date: @{triggerBody()?['StartDate']}</li><li>Correlation ID: @{variables('correlationId')}</li><li>Error: @{body('HTTP_Call_Provision_Function')?['error']}</li></ul><p>Please investigate and provision manually if needed.</p>"
+            }
+          },
+          "runAfter": {
+            "Create_Error_Log_Item": [
+              "Succeeded"
+            ]
+          }
+        }
+      },
+      "runAfter": {
+        "HTTP_Call_Provision_Function": [
+          "Failed",
+          "TimedOut"
+        ]
+      }
+    }
+  },
+  "outputs": {}
+}
