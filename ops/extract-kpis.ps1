@@ -138,10 +138,10 @@ try {
         }
     }
 
-    exit 0
+    return
 }
 catch {
     Write-Host "❌ Error extracting KPIs: $($_.Exception.Message)" -ForegroundColor Red
     Write-Verbose $_.ScriptStackTrace
-    exit 1
+    throw
 }
