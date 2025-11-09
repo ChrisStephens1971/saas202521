@@ -1,0 +1,54 @@
+{
+  "roleMappings": {
+    "Employee": {
+      "groups": [
+        "All Employees"
+      ]
+    },
+    "Contractor": {
+      "groups": [
+        "Contractors"
+      ]
+    },
+    "Intern": {
+      "groups": [
+        "Interns",
+        "All Employees"
+      ]
+    }
+  },
+  "departmentMappings": {
+    "Engineering": {
+      "groups": [
+        "Engineering Team"
+      ]
+    },
+    "Sales": {
+      "groups": [
+        "Sales Team"
+      ]
+    },
+    "Marketing": {
+      "groups": [
+        "Marketing Team"
+      ]
+    },
+    "HR": {
+      "groups": [
+        "HR Team"
+      ]
+    },
+    "Finance": {
+      "groups": [
+        "Finance Team"
+      ]
+    },
+    "IT": {
+      "groups": [
+        "IT Team"
+      ]
+    }
+  },
+  "defaultLicense": "Office 365 E3",
+  "notes": "Group names should match exact Azure AD group display names. Groups will be looked up by displayName and users added by ID."
+}

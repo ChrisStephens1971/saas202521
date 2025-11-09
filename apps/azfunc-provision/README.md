@@ -11,6 +11,8 @@ This Functions app provides two HTTP endpoints:
 
 Both endpoints use structured logging with correlation IDs for traceability.
 
+**NEW in PR 5:** Real Microsoft Graph API integration! Functions now create actual users in Azure AD with licenses and group assignments. Mock mode still available when Graph credentials are not configured.
+
 ## Prerequisites
 
 - Node.js 18+ and npm 9+
@@ -228,17 +230,31 @@ Every request generates a unique `correlationId` for traceability. All logs incl
 
 Logs are written to console (local) and Application Insights (cloud).
 
-## Mock Mode
+## Mock Mode vs. Real Mode
 
-In PR 1, the functions run in **mock mode** - they validate payloads and return success responses without making real Graph API calls.
+**PR 5** adds real Microsoft Graph API integration! The functions automatically detect which mode to run in:
 
-Real Graph integration will be added in **PR 5**.
+### Real Mode (Graph API credentials configured)
+When `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, and `GRAPH_CLIENT_SECRET` are set:
+- Creates actual users in Azure AD
+- Assigns Office 365 licenses
+- Adds users to groups based on role/department mappings
+- Disables users and removes licenses on rollback
 
-To test locally without Graph credentials:
+### Mock Mode (no credentials)
+When Graph credentials are missing or invalid:
+- Validates payloads and returns mock success responses
+- No actual changes made to Azure AD
+- Useful for local development and testing
+- Logs show "Running in mock mode"
 
-1. Leave `.env` fields empty or use placeholder values
-2. Start the functions: `npm start`
-3. Functions will log "Running in mock mode" and return mock responses
+### Group Mappings
+
+Role and department are automatically mapped to Azure AD groups via `config/group-mappings.json`:
+- **Roles**: Employee, Contractor, Intern
+- **Departments**: Engineering, Sales, Marketing, HR, Finance, IT
+
+Edit this file to customize group assignments for your organization
 
 ## Deployment
 
